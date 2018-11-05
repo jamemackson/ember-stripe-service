@@ -10,6 +10,7 @@ import { Promise as EmberPromise } from 'rsvp';
 let loadedScripts = {};
 
 export default function loadScript(url) {
+  console.log('loadedScripts: ', loadedScripts);
   let promise = loadedScripts[url];
   if (!promise) {
     promise = new EmberPromise((resolve, reject) => {

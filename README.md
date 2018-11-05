@@ -12,6 +12,8 @@ If you have any questions, come :wave: hello in #e-stripe-service on the [Ember 
 - provides debugging logs for easy troubleshooting
 - client side validations for card number, expiration dates, card type and CVC
 - lazy load stripe.js
+- stripe terminal support
+
 
 ## Installation
 
@@ -156,6 +158,44 @@ The interface is similar yet again for PII data tokens:
   }
 })
 ````
+
+## using Stripe Terminal
+<!-- TODO: add content about using terminal-->
+Please refer to the main documentation for this overall process: https://stripe.com/docs/terminal/js
+
+When integrating this addon into your app you'll need to provide a function that will return a terminal connection token.  see the [docs](https://stripe.com/docs/terminal/js#connection-token) for details of what is expected and how to create an endpoint that will satisfy this requirement.
+
+What this addon expects is additional configuration when using terminal:
+
+```javascript
+  ENV.stripe = {
+    publishableKey: 'pk_test_abc123',
+    debug: false, // turn on debugging
+    lazyLoad: true, // lazy load stripe
+    mock: false, // mock out stripe.js, good for offline testing
+    terminalEnabled: true,  // turn on terminal support
+    terminalTokenServiceName: 'terminal-token', // name of a service that will have a 
+    terminalPaymentAuthUrl: 'http://localhost:4000/billings/authorize',
+    terminalPaymentCaptureUrl: 'http://localhost:4000/billings/capture'
+  };
+```
+
+
+
+
+
+
+### register your terminal device(s)
+```bash
+# register terminal
+curl https://api.stripe.com/v1/terminal/readers \
+  -u {{secret_key_from_test_environment}}: \
+  -d registration_code="{{READER_REGISTRATION_CODE}}" \
+  -d label="Optional display name"
+# confirm registration
+curl https://api.stripe.com/v1/terminal/readers \
+  -u {{secret_key_from_test_environment}}:  
+```
 
 ## Debugging
 By setting `LOG_STRIPE_SERVICE` to true in your application configuration you can enable some debugging messages from the service

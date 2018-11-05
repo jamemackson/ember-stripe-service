@@ -20,12 +20,14 @@ export function initialize() {
     throw new EmberError("StripeService: Missing Stripe key, please set `ENV.stripe.publishableKey` in config.environment.js");
   }
 
+  // TODO: add some warnings here about expected params if terminal is enabled.
+
   if (typeof FastBoot !== 'undefined' || stripeConfig.mock) {
     window.Stripe = StripeMock;
   }
 }
 
 export default {
-  name: 'ember-stripe-stripe',
+  name: 'ember-stripe-service',
   initialize: initialize
 };
