@@ -174,7 +174,7 @@ What this addon expects is additional configuration when using terminal:
     lazyLoad: true, // lazy load stripe
     mock: false, // mock out stripe.js, good for offline testing
     terminalEnabled: true,  // turn on terminal support
-    terminalTokenServiceName: 'terminal-token', // name of a service that will have a 
+    terminalTokenServiceName: 'terminal', // name of a service that will have a 
     terminalPaymentAuthUrl: 'http://localhost:4000/billings/authorize',
     terminalPaymentCaptureUrl: 'http://localhost:4000/billings/capture'
   };

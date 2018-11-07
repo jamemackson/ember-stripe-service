@@ -27,19 +27,10 @@ export default Service.extend({
   // DONE: add property to track enabling terminal functionality
   terminalEnabled: readOnly('config.terminalEnabled'),
   // DONE: add property for the get terminal token url to call
-  terminalTokenServiceName: readOnly('config.terminalTokenServiceName'),
-  // DONE: add property for the url to call to create a payment intent (aka authorization)
-  terminalPaymentAuthUrl: readOnly('config.terminalPaymentAuthUrl'),
-  // DONE: add property for the url to call to capture a confirmed payment intent (aka authorization)
-  terminalPaymentCaptureUrl: readOnly('config.terminalPaymentCaptureUrl'),
+  terminalServiceName: readOnly('config.terminalTokenServiceName'),
 
   runCount: 0,
 
-  // setFetchConnectionTokenMethod(method) {
-  //   this.debug('in setFetchConnectionTokenMethod!');
-  //   this.set('fetchConnectionToken', method);
-  // },
-  
   async init() {
     this.debug('entering stripe init...');
     this._super(...arguments);
@@ -60,7 +51,7 @@ export default Service.extend({
 
     if (terminalEnabled) {
       // dynamically inject the service only if enabled
-      this.set('terminalTokenService', service(this.get('terminalTokenServiceName')));
+      this.set('terminalTokenService', service(this.get('terminalServiceName')));
     }
 
     if (!lazyLoad || mock) {
@@ -81,12 +72,13 @@ export default Service.extend({
     // DONE: (Step 1) also load the terminal script when enabled
     const loadCoreSdk = lazyLoad && !mock ? loadScript(defaultCoreSdkUrl) : resolve();
     const loadTerminalSdk = lazyLoad && terminalEnabled ? loadScript(defaultTerminalSdkUrl) : resolve();
+    const loadTerminalAction = lazyLoad && terminalEnabled ? 'loaded' : 'skipped';
 
     return resolve()
     .then(() => loadCoreSdk)
     .then(() => this.debug('core stripe script loaded'))
     .then(() => loadTerminalSdk)
-    .then(() => this.debug('stripe terminal script loaded'))
+    .then(() => this.debug(`stripe terminal script ${loadTerminalAction}`))
     .then(() => {
       this.configure();
       this.debug('leaving load...');
@@ -126,7 +118,6 @@ export default Service.extend({
         // DONE: (Step 3) wire up terminal token service to get connection tokens from implementors backend
         const terminalTokenService = this.get('terminalTokenService');
         const fetchTokenFunction = terminalTokenService.getFetchConnectionTokenFn();
-        console.log({ fetchTokenFunction });
         const terminal = StripeTerminal.create({
           // fetchConnectionToken must be a function that returns a promise
           onFetchConnectionToken: fetchTokenFunction
@@ -264,7 +255,7 @@ export default Service.extend({
     }
     const discoverResult = await terminal.discoverReaders(configuration);
     if (discoverResult.error) {
-      console.log('Failed to discover: ', discoverResult.error);
+      console.error('Failed to discover readers: ', discoverResult.error);
     } else if (discoverResult.discoveredReaders.length === 0) {
       console.log('No available readers.');
     } else {
@@ -276,109 +267,78 @@ export default Service.extend({
     }
   },
 
-  // async () => {
-  
-  //   const consfiguration = {method: 'simulated'}
-  //   const discoverResult = await terminal.discoverReaders(configuration);
-  //  
-  //   const discoverResult = await terminal.discoverReaders();
-  //   if (discoverResult.error) {
-  //     console.log('Failed to discover: ', discoverResult.error);
-  //   } else if (discoverResult.discoveredReaders.length === 0) {
-  //     console.log('No available readers.');
-  //   } else {
-  //     // You should show the list of discoveredReaders to the
-  //     // cashier here and let them select which to connect to (see below).
-  //     connectReader(discoverResult);
-  //   }
-  // }
-
   // DONE: (Step 4) create method to connect to reader
   async connectReader(reader) {
     // Just select the first reader here.
     // const selectedReader = discoverResult.discoveredReaders[1];
     const terminal = this.get('terminal');
-    console.log('connecting to reader: ', reader);
+    this.debug('connecting to reader: ', reader);
     const connectResult = await terminal.connectReader(reader);
-    console.log('connection result: ', connectResult);
+    this.debug('connection result: ', connectResult);
+    this.debug('reader status', terminal.getPaymentStatus());
     if (connectResult.error) {
-      console.log('Failed to connect:', connectResult.error);
+      console.error('Failed to connect:', connectResult.error);
     } else {
-      console.log('Connected to reader:', connectResult.connection.reader.label);
+      this.debug('Connected to reader:', connectResult.connection.reader.id);
       this.set('connectedReader', reader);
     }
-  }
+  },
+  // DONE: (Pay Step 1) create method to create a payment intent
+  async registerAuthorization(data) {
+    this.set('activeAuthorization', data);
+  },
 
-  // TODO: (Pay Step 1) create method to create a payment intent
-  // // example of call happening on backend.
-  // stripe.paymentIntents.create({
-  //   amount: 1000,
-  //   currency: 'usd',
-  //   allowed_source_types: ['card_present'],
-  //   capture_method: 'manual',
-  // }, function(err, paymentIntent) {
-  //   // asynchronously called
-  // });
+  // DONE: (Pay Step 2) create method to collect payment method using payment intent
+  async collectPaymentMethod(paymentIntent) {
+    // clientSecret is the client_secret from the PaymentIntent you created in Step 1.
+    const terminal = this.get('terminal');
+    this.debug('confirming payment intent:', paymentIntent);
+    const result = await terminal.collectPaymentMethod(paymentIntent['client_secret']);
+    if (result.error) {
+      console.error(`Collect payment method failed: ${result.error.message}`);
+    }
+    else {
+      this.debug("confirmed payment intent: ", result.paymentIntent);
+      // Confirm PaymentIntent (see below)
+      // this.set('confirmedAuthorization', result.paymentIntent);
+      this.confirmPaymentIntent(result.paymentIntent);
+    }
+  },
 
-  // TODO: (Pay Step 2) create method to collect payment method using payment intent
-  // async collectPaymentMethod() {
-  //   // clientSecret is the client_secret from the PaymentIntent you created in Step 1.
-  //   const result = await terminal.collectPaymentMethod(clientSecret);
-  //   if (result.error) {
-  //     console.error(`Collect payment method failed: ${result.error.message}`);
-  //   }
-  //   else {
-  //     console.log("Payment method: ", result.paymentIntent.payment_method);
-  //     // Confirm PaymentIntent (see below)
-  //     confirmPaymentIntent(result.paymentIntent);
-  //   }
-  // }
+  // DONE: (Pay Step 2) confirm payment intent
+  async confirmPaymentIntent(paymentIntent) {
+    console.log('confirming authorization!')
+    const terminal = this.get('terminal');
+    const confirmResult = await terminal.confirmPaymentIntent(paymentIntent);
+    if (confirmResult.error) {
+      console.error(`Confirm failed: ${confirmResult.error.message}`);
+    } else if (confirmResult.paymentIntent) {
+      // Placeholder for notifying your backend to capture the PaymentIntent
+      console.log('authorization confirmed', confirmResult);
+      this.set('confirmedAuthorization', confirmResult.paymentIntent);
+    }
+  },
 
-  // TODO: (Pay Step 2-1) add option to customize the display while collecting payment
-  // terminal.setReaderDisplay({
-  //   type: 'cart',
-  //   cart: {
-  //     lineItems: [
-  //       {
-  //         description: "Blue Shirt",
-  //         amount: 1000,
-  //         quantity: 2,
-  //       },
-  //       {
-  //         description: "Jeans",
-  //         amount: 3000,
-  //         quantity: 1,
-  //       },
-  //     ],
-  //     tax: 100,
-  //     // These amounts are for display only,
-  //     // and do not determine the amount that gets charged.
-  //     total: 5100,
-  //     currency: 'usd',
-  //   },
-  // });
+  // DONE: (Pay Step 2-1) add option to customize the display while collecting payment
+  async setDisplay(data) {
+    const terminal = this.get('terminal');
+    terminal.setReaderDisplay(data);
+  },
 
-  // TODO: (Pay Step 2-2) clear reader display
-  // terminal.clearReaderDisplay();
+  // DONE: (Pay Step 2-2) clear reader display
+  async clearDisplay() {
+    const terminal = this.get('terminal');
+    terminal.clearReaderDisplay();
+  },
 
-  // TODO: (Pay Step 2) confirm payment intent
-  // async confirmPaymentIntent(paymentIntent) {
-  //   const confirmResult = await terminal.confirmPaymentIntent(paymentIntent);
-  //   if (confirmResult.error) {
-  //     console.error(`Confirm failed: ${confirmResult.error.message}`);
-  //   } else if (confirmResult.paymentIntent) {
-  //     // Placeholder for notifying your backend to capture the PaymentIntent
-  //   }
-  // }
-
-  // TODO: (Pay Step 2.1) cancel payment intent
+  // DONE: (Pay Step 2.1) cancel payment intent (in impl app terminal service)
 
   // TODO: (Pay Step 3): Handle failures
   // TODO: (Pay Step 3): Handle failure: requires_source => payment method declined, try another with updated paymentIntent
   // TODO: (Pay Step 3): Handle failure: requires_confirmation => call confirmPaymentIntent again to retry
   // TODO: (Pay Step 3): Handle failure: other ... unknown errors... 
 
-  // TODO: (Pay Step 4): capture payment intent after success confirmation
+  // DONE: (Pay Step 4): capture payment intent after success confirmation (in impl app terminal service)
 
   // TODO: (Pay Step X1): add method to just capture a card without charging (which can be passed to backend to save etc)
   // TODO: (Pay Step X2): add method to save a card present source by converting it to a card source (on backend) 
